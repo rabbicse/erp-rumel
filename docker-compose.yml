@@ -1,0 +1,63 @@
+services:
+
+  # ── PostgreSQL ──────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: caratflow_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: caratflow
+      POSTGRES_USER: caratflow
+      POSTGRES_PASSWORD: caratflow_local
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U caratflow -d caratflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── Go Backend ──────────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: caratflow_api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PORT: 8080
+      ENV: production
+      DATABASE_URL: postgres://caratflow:caratflow_local@postgres:5432/caratflow?sslmode=disable
+      JWT_SECRET: local-dev-jwt-secret-change-in-prod
+      JWT_REFRESH_SECRET: local-dev-refresh-secret-change-in-prod
+      METALS_API_KEY: ""
+      ALLOWED_ORIGINS: http://localhost:3000
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/api/v1/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Next.js Frontend ────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8080
+    container_name: caratflow_web
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "3000:3000"
+
+volumes:
+  postgres_data:
